@@ -60,6 +60,7 @@ bzl_library(
     srcs = ["copy_to_bin.bzl"],
     visibility = ["//lib:__subpackages__"],
     deps = [
+        ":tar",
         ":copy_file",
         "@bazel_skylib//lib:paths",
     ],

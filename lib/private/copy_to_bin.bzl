@@ -16,8 +16,9 @@
 
 load("@bazel_skylib//lib:paths.bzl", "paths")
 load(":copy_file.bzl", "COPY_FILE_TOOLCHAINS", "copy_file_action")
+load(":tar.bzl", "tar_lib", "mtree_line", "vis_encode")
 
-COPY_FILE_TO_BIN_TOOLCHAINS = COPY_FILE_TOOLCHAINS
+COPY_FILE_TO_BIN_TOOLCHAINS = COPY_FILE_TOOLCHAINS + [tar_lib.toolchain_type]
 
 def copy_file_to_bin_action(ctx, file):
     """Factory function that creates an action to copy a file to the output tree.
@@ -129,7 +130,45 @@ def copy_files_to_bin_actions(ctx, files):
         List of File objects in the output tree.
     """
 
-    return [copy_file_to_bin_action(ctx, file) for file in files]
+    # TODO: checks like scalar version.
+
+    gen_files = [file for file in files if not file.is_source]
+    if len(files) == len(gen_files):
+        return files
+
+    src_dsts = [(file, ctx.actions.declare_file(file.basename, sibling = file)) for file in files if file.is_source]
+    dsts = [dst for src, dst in src_dsts]
+
+    mtree = ctx.actions.declare_file(ctx.attr.name + "_/copy_to_bin.mtree")
+    ctx.actions.write(
+        mtree,
+        ctx.actions.args()
+            .set_param_file_format("multiline")
+            .add("#mtree")
+            .add_all(
+                src_dsts,
+                map_each = lambda src_dst: mtree_line(vis_encode(src_dst[1].path), type = "file", content = vis_encode(src_dst[0].path)),
+                allow_closure = True,
+            ),
+    )
+
+    bsdtar = ctx.toolchains[tar_lib.toolchain_type]
+
+    args = ctx.actions.args()
+    args.add("xf")
+    args.add(mtree)
+    args.add("--options=mtree:checkfs")
+
+    ctx.actions.run(
+        executable = bsdtar.tarinfo.binary,
+        arguments = [args],
+        inputs = depset(direct = files + [mtree], transitive = [bsdtar.default.files]),
+        outputs = dsts,
+        mnemonic = "ExpandMtree",
+        toolchain = tar_lib.toolchain_type,
+    )
+
+    return dsts + gen_files
 
 def _copy_to_bin_impl(ctx):
     files = copy_files_to_bin_actions(ctx, ctx.files.srcs)

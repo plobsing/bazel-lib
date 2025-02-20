@@ -558,3 +558,7 @@ tar = rule(
         "@aspect_bazel_lib//lib:coreutils_toolchain_type",
     ],
 )
+
+# TODO: exposed for prototype purposes only.
+mtree_line = _mtree_line
+vis_encode = _vis_encode
